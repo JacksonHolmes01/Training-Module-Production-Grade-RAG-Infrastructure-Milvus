@@ -1,0 +1,32 @@
+server {
+    listen 8088;
+    server_tokens off;
+    client_max_body_size 2m;
+
+    # Unauthenticated health check for load-balancer / uptime monitors
+    location = /proxy-health {
+        return 200 "ok\n";
+        add_header Content-Type text/plain;
+    }
+
+    # All other routes require the API key
+    location / {
+        if ($http_x_api_key = "") {
+            return 401 '{"error":"missing X-API-Key header"}';
+        }
+        if ($http_x_api_key != "${EDGE_API_KEY}") {
+            return 403 '{"error":"invalid API key"}';
+        }
+
+        # LLM/RAG calls can take >60s (especially first cold start)
+        proxy_connect_timeout  60s;
+        proxy_send_timeout    300s;
+        proxy_read_timeout    300s;
+        send_timeout          300s;
+
+        proxy_pass http://ingestion-api:8000;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-API-Key         $http_x_api_key;
+    }
+}

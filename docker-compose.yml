@@ -1,0 +1,193 @@
+services:
+  # -------------------------------------------------------------------
+  # Milvus dependencies: etcd (metadata store) + minio (object storage)
+  # -------------------------------------------------------------------
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.5
+    container_name: milvus-etcd
+    restart: unless-stopped
+    mem_limit: 512m
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command:
+      - etcd
+      - --advertise-client-urls=http://127.0.0.1:2379
+      - --listen-client-urls=http://0.0.0.0:2379
+      - --data-dir=/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    volumes:
+      - etcd_data:/etcd
+    networks:
+      - internal
+
+  minio:
+    image: minio/minio:RELEASE.2023-03-13T19-46-17Z
+    container_name: milvus-minio
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+    command: minio server /minio_data --console-address ":9001"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 20s
+      retries: 3
+    volumes:
+      - minio_data:/minio_data
+    networks:
+      - internal
+
+  # -------------------------------------------------------------------
+  # Milvus standalone — drop-in replacement for Qdrant
+  # -------------------------------------------------------------------
+  milvus:
+    image: milvusdb/milvus:v2.4.9
+    container_name: milvus
+    restart: unless-stopped
+    mem_limit: 8g
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_ACCESS_KEY_ID: minioadmin
+      MINIO_SECRET_ACCESS_KEY: minioadmin
+    volumes:
+      - milvus_data:/var/lib/milvus
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9091/healthz"]
+      interval: 30s
+      timeout: 20s
+      retries: 10
+      start_period: 90s
+    networks:
+      - internal
+
+  # -------------------------------------------------------------------
+  # Ollama — local LLM + embeddings (unchanged)
+  # -------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ollama
+    restart: unless-stopped
+    mem_limit: 8g
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - internal
+
+  # -------------------------------------------------------------------
+  # Ingestion + RAG API (FastAPI)
+  # -------------------------------------------------------------------
+  ingestion-api:
+    build:
+      context: ./ingestion-api
+    container_name: ingestion-api
+    restart: unless-stopped
+    mem_limit: 1g
+    env_file:
+      - .env
+    environment:
+      # Core services
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      OLLAMA_MODEL: "${OLLAMA_MODEL}"
+      # Milvus connection (gRPC port 19530, HTTP port 9091)
+      MILVUS_HOST: "milvus"
+      MILVUS_PORT: "19530"
+      MILVUS_COLLECTION: "${MILVUS_COLLECTION}"
+      # Embeddings via Ollama
+      EMBEDDINGS_PROVIDER: "ollama"
+      OLLAMA_EMBED_MODEL: "${OLLAMA_EMBED_MODEL:-nomic-embed-text}"
+      # Security memory
+      SECURITY_DATA_DIR: "/securitymemory/data"
+      SECURITY_COLLECTION: "${SECURITY_COLLECTION:-ExpandedVSCodeMemory}"
+      SECURITY_TOP_K: "${SECURITY_TOP_K:-6}"
+      SECURITY_CHUNK_CHARS: "${SECURITY_CHUNK_CHARS:-1200}"
+      SECURITY_CHUNK_OVERLAP: "${SECURITY_CHUNK_OVERLAP:-200}"
+      SECURITY_EMBED_MODEL: "${SECURITY_EMBED_MODEL:-nomic-embed-text}"
+      SECURITY_EMBED_DIM: "${SECURITY_EMBED_DIM:-768}"
+    volumes:
+      - ./security-memory/data:/securitymemory/data:ro
+    depends_on:
+      milvus:
+        condition: service_healthy
+      ollama:
+        condition: service_started
+    networks:
+      - internal
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level debug
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:8000/health', timeout=5).read(); sys.exit(0)"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+  # -------------------------------------------------------------------
+  # NGINX edge gateway (unchanged)
+  # -------------------------------------------------------------------
+  nginx:
+    image: nginx:1.27-alpine
+    container_name: edge-nginx
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      - "8088:8088"
+    environment:
+      EDGE_API_KEY: "${EDGE_API_KEY}"
+      NGINX_ENVSUBST_TEMPLATE_DIR: /etc/nginx/templates
+    volumes:
+      - ./nginx/templates/default.conf.template:/etc/nginx/templates/default.conf.template:ro
+    depends_on:
+      ingestion-api:
+        condition: service_started
+    networks:
+      - internal
+
+  # -------------------------------------------------------------------
+  # Gradio chat UI (unchanged)
+  # -------------------------------------------------------------------
+  gradio-ui:
+    build:
+      context: ./gradio-ui
+    container_name: gradio-ui
+    restart: unless-stopped
+    mem_limit: 512m
+    ports:
+      - "7860:7860"
+    environment:
+      API_BASE_URL: "http://edge-nginx:8088"
+      EDGE_API_KEY: "${EDGE_API_KEY}"
+      GRADIO_HTTP_TIMEOUT_S: "600"
+    depends_on:
+      nginx:
+        condition: service_started
+    networks:
+      - internal
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; urllib.request.urlopen('http://localhost:7860/', timeout=5).read(); sys.exit(0)"]
+      interval: 15s
+      timeout: 5s
+      retries: 30
+
+networks:
+  internal:
+    driver: bridge
+
+volumes:
+  etcd_data:
+  minio_data:
+  milvus_data:
+  ollama_data:
