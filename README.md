@@ -158,9 +158,3 @@ curl -s -X POST "http://localhost:8088/chat" \
 Go to [lessons/00-lesson-index.md](lessons/00-lesson-index.md) and work through the lessons in order.
 
 The most important lesson for the Milvus migration is [Lesson 5](lessons/05-milvus-schema-and-vectorization.md), which explains the schema model and collection lifecycle in detail.
-
----
-
-# Architecture Comparison
-
-If you want to understand every code change between the Qdrant and Milvus versions, see [ARCHITECTURE-DELTA.md](ARCHITECTURE-DELTA.md).
