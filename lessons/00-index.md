@@ -47,7 +47,6 @@ milvus-rag/
 │   │   └── security_memory/    # Security-memory sub-module
 │   └── requirements.txt
 ├── lessons/                    # You are here
-└── ARCHITECTURE-DELTA.md       # Side-by-side Qdrant → Milvus comparison
 ```
 
 Start with **Lesson 01** for the big picture, or jump straight to **Lesson 02**

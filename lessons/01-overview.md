@@ -135,8 +135,6 @@ If you are familiar with the Qdrant version of this lab, the key differences are
 - **Startup time**: Expect 60–90 seconds for the Milvus cluster to become
   healthy, vs ~5 seconds for Qdrant.
 
-See `ARCHITECTURE-DELTA.md` for a full side-by-side comparison.
-
 ---
 
 ## Checkpoint

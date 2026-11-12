@@ -2,8 +2,6 @@
 
 This is the **Milvus version** of Lab 1. It is architecturally identical to the Qdrant version except the vector database has been replaced with **Milvus standalone**.
 
-If you are comparing the two labs, see [ARCHITECTURE-DELTA.md](ARCHITECTURE-DELTA.md).
-
 ---
 
 # What You Will Build

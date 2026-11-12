@@ -149,8 +149,8 @@ By completing this lab, you have:
   `llama3.1:8b`) and observe the quality difference.
 - Add a new collection for a different domain (legal references, API docs)
   and build a second retrieval endpoint.
-- Read `ARCHITECTURE-DELTA.md` to understand every specific change made from
-  the Qdrant version.
+- Compare `ingestion-api/app/milvus_client.py` with `qdrant_client.py` in the
+  Qdrant version to see every specific change made to the data layer.
 
 ---
 
