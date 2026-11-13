@@ -1,0 +1,42 @@
+# Layer 5: encrypt and verify traffic between the API and Milvus (Lesson 9).
+# Milvus serves HTTPS with a certificate signed by the lab's own certificate
+# authority (CA). The API and milvus-init trust ONLY that CA, so they refuse
+# any server that cannot prove it is "milvus".
+services:
+  milvus:
+    # The same settings file as before, plus TLS (tlsMode: 1 = the server
+    # proves who it is; clients log in with a password as before). Milvus
+    # only allows TLS when its REST API has its own port, so REST moves from
+    # 19530 (shared with gRPC) to 19531.
+    volumes: !override
+      - milvus_data:/var/lib/milvus
+      - ./secrets/milvus_user_tls.yaml:/milvus/configs/user.yaml:ro
+    secrets:
+      - milvus_server_crt
+      - milvus_server_key
+      - tls_ca_crt
+
+  milvus-init:
+    environment:
+      MILVUS_URL: "https://milvus:19531"
+      MILVUS_CA_CERT: /run/secrets/tls_ca_crt
+    secrets:
+      - milvus_root_password
+      - milvus_writer_password
+      - milvus_reader_password
+      - tls_ca_crt
+
+  ingestion-api:
+    environment:
+      MILVUS_URL: "https://milvus:19531"
+      MILVUS_CA_CERT: /run/secrets/tls_ca_crt
+    secrets:
+      - tls_ca_crt
+
+secrets:
+  milvus_server_crt:
+    file: ./secrets/milvus_server.crt
+  milvus_server_key:
+    file: ./secrets/milvus_server.key
+  tls_ca_crt:
+    file: ./secrets/tls_ca.crt

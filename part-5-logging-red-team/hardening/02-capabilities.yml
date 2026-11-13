@@ -1,0 +1,22 @@
+# Layer 2: drop every Linux capability, block privilege escalation,
+# and cap the number of processes (Lesson 6).
+# Requires Layer 1: a root process that loses its capabilities often cannot start.
+# (storage-perms already has its own minimal settings in Layer 1.)
+x-locked-down: &locked-down
+  cap_drop: [ALL]
+  security_opt: ["no-new-privileges:true"]
+  pids_limit: 256
+
+services:
+  etcd: *locked-down
+  minio: *locked-down
+  # Milvus runs many worker threads, so it keeps the higher process limit
+  # it was given in docker-compose.yml.
+  milvus:
+    cap_drop: [ALL]
+    security_opt: ["no-new-privileges:true"]
+  milvus-init: *locked-down
+  ollama: *locked-down
+  ingestion-api: *locked-down
+  nginx: *locked-down
+  gradio-ui: *locked-down

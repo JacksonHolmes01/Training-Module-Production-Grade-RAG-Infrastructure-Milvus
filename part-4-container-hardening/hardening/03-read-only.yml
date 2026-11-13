@@ -1,0 +1,43 @@
+# Layer 3: make every container's filesystem read-only (Lesson 7).
+# tmpfs gives each service a small, in-memory scratch folder that
+# disappears when the container stops. Data volumes stay writable.
+#   noexec  nothing written there can be run as a program
+#   nosuid  setuid bits on files there are ignored
+services:
+  etcd:
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=16m
+  minio:
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,uid=10001,gid=10001,size=64m
+  milvus:
+    read_only: true
+    # Milvus writes temporary files, and its access log, to /tmp
+    tmpfs:
+      - /tmp:noexec,nosuid,uid=999,gid=999,size=512m
+  milvus-init:
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=16m
+  ollama:
+    read_only: true
+    # No noexec here: Ollama unpacks its model runner programs into /tmp and runs them
+    tmpfs:
+      - /tmp:nosuid,size=512m
+  ingestion-api:
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+  nginx:
+    read_only: true
+    # NGINX renders its config into conf.d at startup. That folder must belong
+    # to NGINX's own user (101), or startup silently leaves it empty.
+    tmpfs:
+      - /tmp:noexec,nosuid,size=64m
+      - /etc/nginx/conf.d:uid=101,gid=101,mode=0755,noexec,nosuid,size=1m
+  gradio-ui:
+    read_only: true
+    tmpfs:
+      - /tmp:noexec,nosuid,size=256m

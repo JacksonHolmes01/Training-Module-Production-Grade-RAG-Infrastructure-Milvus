@@ -1,0 +1,245 @@
+# Fixed project name, so this lab's containers, volumes, and networks
+# never collide with another lab that uses the same folder name.
+name: secure-ai-milvus-part4
+
+services:
+  # -------------------------------------------------------------------
+  # Milvus's two helpers: etcd (metadata) and MinIO (file storage).
+  # They sit on their own private network that only Milvus can reach.
+  # -------------------------------------------------------------------
+  etcd:
+    image: quay.io/coreos/etcd:v3.5.25
+    container_name: rag-etcd
+    restart: unless-stopped
+    mem_limit: 512m
+    pids_limit: 256
+    environment:
+      ETCD_AUTO_COMPACTION_MODE: revision
+      ETCD_AUTO_COMPACTION_RETENTION: "1000"
+      ETCD_QUOTA_BACKEND_BYTES: "4294967296"
+      ETCD_SNAPSHOT_COUNT: "50000"
+    command: ["etcd", "-advertise-client-urls=http://etcd:2379", "-listen-client-urls=http://0.0.0.0:2379", "--data-dir=/etcd"]
+    volumes:
+      - etcd_data:/etcd
+    healthcheck:
+      test: ["CMD", "etcdctl", "endpoint", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks:
+      - milvus-deps
+
+  minio:
+    image: milvusdb/minio:RELEASE.2024-12-18T13-15-44Z
+    container_name: rag-minio
+    restart: unless-stopped
+    mem_limit: 1g
+    pids_limit: 256
+    # MinIO reads its credentials from these secret files. Its well-known
+    # default login (minioadmin / minioadmin) never exists.
+    environment:
+      MINIO_ROOT_USER_FILE: minio_user
+      MINIO_ROOT_PASSWORD_FILE: minio_password
+    secrets:
+      - minio_user
+      - minio_password
+    command: ["minio", "server", "/minio_data"]
+    volumes:
+      - minio_data:/minio_data
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks:
+      - milvus-deps
+
+  # -------------------------------------------------------------------
+  # Milvus: the knowledge store
+  # Internal only: no ports are published to your computer.
+  # Every request needs a user name and password; roles decide what each
+  # user may do. Its settings come from a secret file (configs/user.yaml).
+  # -------------------------------------------------------------------
+  milvus:
+    image: milvusdb/milvus:v3.0.5
+    container_name: rag-milvus
+    restart: unless-stopped
+    mem_limit: 4g
+    cpus: 2.0
+    pids_limit: 512
+    command: ["milvus", "run", "standalone"]
+    environment:
+      ETCD_ENDPOINTS: etcd:2379
+      MINIO_ADDRESS: minio:9000
+      MINIO_REGION: us-east-1
+    volumes:
+      - milvus_data:/var/lib/milvus
+      - ./secrets/milvus_user.yaml:/milvus/configs/user.yaml:ro
+    depends_on:
+      etcd:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9091/healthz"]
+      interval: 10s
+      timeout: 5s
+      start_period: 60s
+      retries: 30
+    networks:
+      - internal
+      - milvus-deps
+
+  # -------------------------------------------------------------------
+  # milvus-init: runs once with the ROOT password to create the database,
+  # the collection, the users, and the roles, then exits. Nothing that
+  # keeps running ever holds the root password.
+  # -------------------------------------------------------------------
+  milvus-init:
+    build:
+      context: ./ingestion-api
+    container_name: rag-milvus-init
+    restart: "no"
+    command: ["python", "-m", "app.milvus_init"]
+    environment:
+      MILVUS_URL: "http://milvus:19530"
+      APP_TENANT: "${APP_TENANT:-lab}"
+      EMBED_DIM: "${EMBED_DIM:-768}"
+    secrets:
+      - milvus_root_password
+      - milvus_writer_password
+      - milvus_reader_password
+    depends_on:
+      milvus:
+        condition: service_healthy
+    networks:
+      - internal
+
+  # -------------------------------------------------------------------
+  # Ollama: local LLM + embedding model
+  # -------------------------------------------------------------------
+  ollama:
+    image: ollama/ollama:0.40.6
+    container_name: rag-ollama
+    restart: unless-stopped
+    mem_limit: 6g
+    volumes:
+      - ollama_data:/root/.ollama
+    networks:
+      - internal
+
+  # -------------------------------------------------------------------
+  # Ingestion + RAG API (FastAPI)
+  # -------------------------------------------------------------------
+  ingestion-api:
+    build:
+      context: ./ingestion-api
+    container_name: rag-api
+    restart: unless-stopped
+    mem_limit: 1g
+    environment:
+      EDGE_API_KEY: "${EDGE_API_KEY:?Run bin/setup_secrets.sh first}"
+      APP_TENANT: "${APP_TENANT:-lab}"
+      MILVUS_URL: "http://milvus:19530"
+      OLLAMA_BASE_URL: "http://ollama:11434"
+      OLLAMA_MODEL: "${OLLAMA_MODEL:-llama3.2:1b}"
+      OLLAMA_EMBED_MODEL: "${OLLAMA_EMBED_MODEL:-nomic-embed-text}"
+      EMBED_DIM: "${EMBED_DIM:-768}"
+      RAG_TOP_K: "${RAG_TOP_K:-4}"
+      RAG_MAX_SOURCE_CHARS: "${RAG_MAX_SOURCE_CHARS:-1200}"
+      ENABLE_DEBUG_ENDPOINTS: "${ENABLE_DEBUG_ENDPOINTS:-true}"
+      OLLAMA_TEMPERATURE: "${OLLAMA_TEMPERATURE:-0}"
+      # Prompt injection defenses (Part 3). Set in .env.
+      GUARD_INPUT: "${GUARD_INPUT:-false}"
+      GUARD_INGEST: "${GUARD_INGEST:-false}"
+      GUARD_PROMPT: "${GUARD_PROMPT:-false}"
+      PROMPT_SANITIZE: "${PROMPT_SANITIZE:-true}"
+      GUARD_OUTPUT: "${GUARD_OUTPUT:-false}"
+      ALLOWED_LINK_DOMAINS: "${ALLOWED_LINK_DOMAINS:-example.org}"
+    secrets:
+      - milvus_writer_password
+      - milvus_reader_password
+    depends_on:
+      milvus-init:
+        condition: service_completed_successfully
+      ollama:
+        condition: service_started
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health', timeout=5)"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    networks:
+      - internal
+
+  # -------------------------------------------------------------------
+  # NGINX edge gateway: the only way into the API
+  # -------------------------------------------------------------------
+  nginx:
+    image: nginx:1.28-alpine
+    container_name: rag-nginx
+    restart: unless-stopped
+    mem_limit: 128m
+    ports:
+      - "127.0.0.1:8088:8088"
+    environment:
+      EDGE_API_KEY: "${EDGE_API_KEY:?Run bin/setup_secrets.sh first}"
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+    depends_on:
+      ingestion-api:
+        condition: service_healthy
+    networks:
+      - internal
+
+  # -------------------------------------------------------------------
+  # Gradio chat UI
+  # -------------------------------------------------------------------
+  gradio-ui:
+    build:
+      context: ./gradio-ui
+    container_name: rag-ui
+    restart: unless-stopped
+    mem_limit: 512m
+    ports:
+      - "127.0.0.1:7860:7860"
+    environment:
+      API_BASE_URL: "http://nginx:8088"
+      EDGE_API_KEY: "${EDGE_API_KEY:?Run bin/setup_secrets.sh first}"
+      GRADIO_HTTP_TIMEOUT_S: "${GRADIO_HTTP_TIMEOUT_S:-600}"
+    depends_on:
+      nginx:
+        condition: service_started
+    networks:
+      - internal
+
+secrets:
+  milvus_root_password:
+    file: ./secrets/milvus_root_password.txt
+  milvus_writer_password:
+    file: ./secrets/milvus_writer_password.txt
+  milvus_reader_password:
+    file: ./secrets/milvus_reader_password.txt
+  minio_user:
+    file: ./secrets/minio_user.txt
+  minio_password:
+    file: ./secrets/minio_password.txt
+
+networks:
+  internal:
+    driver: bridge
+  # Only Milvus joins this network. "internal: true" also cuts it off from
+  # the internet. The API, NGINX, and the UI cannot reach etcd or MinIO.
+  milvus-deps:
+    driver: bridge
+    internal: true
+
+volumes:
+  etcd_data:
+  minio_data:
+  milvus_data:
+  # Parts 3, 4, and 5 share one model volume, so models download only once.
+  # bin/setup_secrets.sh creates this volume if it does not exist yet.
+  ollama_data:
+    name: secure-ai-milvus_ollama_data
+    external: true

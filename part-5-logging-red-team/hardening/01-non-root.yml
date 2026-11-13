@@ -1,0 +1,65 @@
+# Layer 1: run every container as an unprivileged user (Lesson 5).
+services:
+  # etcd and MinIO ran as root in Part 3, so their data folders belong to
+  # root. This one-shot container hands both to user 10001, then exits. It is
+  # the ONLY thing that runs as root, it holds exactly the capabilities it
+  # needs to change ownership, and it has no network.
+  storage-perms:
+    image: milvusdb/milvus:v3.0.5
+    container_name: rag-storage-perms
+    restart: "no"
+    user: "0:0"
+    entrypoint: ["sh", "-c", "chown -R 10001:10001 /etcd /minio_data && chmod 700 /etcd && echo 'etcd and minio data folders now owned by 10001'"]
+    cap_drop: [ALL]
+    cap_add: [CHOWN, DAC_READ_SEARCH, FOWNER]
+    security_opt: ["no-new-privileges:true"]
+    network_mode: none
+    volumes:
+      - etcd_data:/etcd
+      - minio_data:/minio_data
+
+  etcd:
+    user: "10001:10001"
+    depends_on:
+      storage-perms:
+        condition: service_completed_successfully
+
+  minio:
+    user: "10001:10001"
+    environment:
+      HOME: /tmp
+    depends_on:
+      storage-perms:
+        condition: service_completed_successfully
+
+  # Milvus's official image already runs as its own user, milvus (999).
+  # Nothing to change: the audit confirms it.
+
+  milvus-init:
+    user: "10001:10001"
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+
+  ollama:
+    user: "10001:10001"
+    environment:
+      HOME: /tmp
+      OLLAMA_MODELS: /ollama/models
+    # Models are mounted READ-ONLY: nothing in this container can replace them
+    volumes: !override
+      - ollama_data:/ollama:ro
+
+  ingestion-api:
+    user: "10001:10001"
+    environment:
+      PYTHONDONTWRITEBYTECODE: "1"
+
+  nginx:
+    # The official NGINX image starts as root; this variant never does
+    image: nginxinc/nginx-unprivileged:1.28.2-alpine
+
+  gradio-ui:
+    user: "10001:10001"
+    environment:
+      HOME: /tmp
+      PYTHONDONTWRITEBYTECODE: "1"

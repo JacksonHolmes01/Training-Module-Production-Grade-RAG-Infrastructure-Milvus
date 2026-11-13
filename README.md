@@ -153,6 +153,23 @@ curl -s -X POST "http://localhost:8088/chat" \
 
 # Lessons
 
-Go to [lessons/00-lesson-index.md](lessons/00-lesson-index.md) and work through the lessons in order.
+Go to [lessons/00-index.md](lessons/00-index.md) and work through the lessons in order.
 
 The most important lesson for the Milvus migration is [Lesson 5](lessons/05-milvus-schema-and-vectorization.md), which explains the schema model and collection lifecycle in detail.
+
+---
+
+# Continue the Series: Attack, Harden, and Monitor This Chatbot
+
+Once Lab 1 works, three more parts take the same Milvus chatbot and make it secure. Each part is its own folder with its own copy of the stack, so you can start any of them fresh.
+
+| Part | Folder | What you do |
+|---|---|---|
+| 3 | [part-3-prompt-injection](part-3-prompt-injection/README.md) | Lock Milvus down (a login on every request, a root password nothing running holds, roles that limit each login to one tenant and one kind of action, and etcd and MinIO walled off with no default passwords), attack the chatbot eight ways with prompt injection, then add and measure four layers of defense |
+| 4 | [part-4-container-hardening](part-4-container-hardening/README.md) | Audit all seven containers, play the attacker inside one, then add six hardening layers (non-root, no capabilities, read-only, secrets out of env vars, internal TLS, scanned and pinned images) and re-measure after each |
+| 5 | [part-5-logging-red-team](part-5-logging-red-team/README.md) | Structured logs, detection rules (including Milvus's own access log), a scripted 12-step red-team campaign against your own lab, detection coverage scoring, and a findings report |
+
+Do them in order, after Lab 1.
+
+---
+*License: code is MIT, lessons are CC BY-SA 4.0. See [README-LICENSE.md](README-LICENSE.md).*

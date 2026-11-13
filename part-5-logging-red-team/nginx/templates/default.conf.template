@@ -1,0 +1,53 @@
+# NGINX edge gateway.
+# ${EDGE_API_KEY} is filled in from the environment when the container starts.
+
+# Part 5: one JSON line per request. Path only ($uri), never the query string,
+# because /debug/retrieve?q=... carries the user's question. Never the API key.
+log_format json_edge escape=json
+  '{"time":"$time_iso8601","source":"edge","request_id":"$request_id",'
+  '"ip":"$remote_addr","method":"$request_method","path":"$uri",'
+  '"status":$status,"bytes":$body_bytes_sent,"duration_s":$request_time,'
+  '"user_agent":"$http_user_agent"}';
+
+# Allow at most 10 requests per second per client IP (burst of 20).
+limit_req_zone $binary_remote_addr zone=api_limit:10m rate=10r/s;
+
+server {
+    listen 8088;
+    server_tokens off;
+    access_log /dev/stdout json_edge;
+    client_max_body_size 1m;
+
+    # Unauthenticated liveness check (reveals nothing about the API)
+    location = /proxy-health {
+        access_log off;   # polled constantly by health checks; not security-relevant
+        default_type text/plain;
+        return 200 "ok\n";
+    }
+
+    location / {
+        default_type application/json;
+
+        if ($http_x_api_key = "") {
+            return 401 '{"error":"missing X-API-Key header"}';
+        }
+        if ($http_x_api_key != "${EDGE_API_KEY}") {
+            return 403 '{"error":"invalid API key"}';
+        }
+
+        limit_req zone=api_limit burst=20 nodelay;
+        limit_req_status 429;
+
+        # LLM calls can take minutes on a laptop CPU
+        proxy_connect_timeout 30s;
+        proxy_send_timeout    300s;
+        proxy_read_timeout    300s;
+
+        proxy_pass http://ingestion-api:8000;
+        proxy_set_header Host            $host;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-API-Key       $http_x_api_key;
+        # One id for this request, shared by the edge log and the API log
+        proxy_set_header X-Request-Id    $request_id;
+    }
+}

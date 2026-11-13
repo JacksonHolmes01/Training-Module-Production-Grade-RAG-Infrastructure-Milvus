@@ -1,0 +1,6 @@
+.env
+secrets/*
+!secrets/.gitkeep
+__pycache__/
+scan-results/
+hardening/06-pinned.yml

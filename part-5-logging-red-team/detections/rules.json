@@ -1,0 +1,147 @@
+[
+  {
+    "id": "D1",
+    "name": "API key brute force",
+    "enabled": true,
+    "severity": "high",
+    "match": {
+      "kind": "edge_request",
+      "status": 403
+    },
+    "group_by": "ip",
+    "threshold": 10,
+    "window_s": 60,
+    "why": "Many wrong API keys from one address in a minute: someone is guessing keys.",
+    "response": "Block the address at the edge, confirm the real key has not leaked, consider rotating it."
+  },
+  {
+    "id": "D2",
+    "name": "Unauthenticated reconnaissance",
+    "enabled": true,
+    "severity": "medium",
+    "match": {
+      "kind": "edge_request",
+      "status": 401
+    },
+    "group_by": "ip",
+    "threshold": 5,
+    "window_s": 60,
+    "why": "Many requests with no key at all: someone is mapping what the service exposes.",
+    "response": "Watch the address. Recon usually comes before a real attempt."
+  },
+  {
+    "id": "D3",
+    "name": "Request flood",
+    "enabled": true,
+    "severity": "medium",
+    "match": {
+      "kind": "edge_request",
+      "status": 429
+    },
+    "group_by": "ip",
+    "threshold": 10,
+    "window_s": 60,
+    "why": "The rate limit is rejecting many requests: a flood, a runaway script, or a denial-of-service attempt.",
+    "response": "Identify the client. If it holds the real key, the key may be misused or leaked."
+  },
+  {
+    "id": "D4",
+    "name": "Prompt injection probing",
+    "enabled": true,
+    "severity": "high",
+    "match": {
+      "kind": "input_blocked"
+    },
+    "group_by": "ip",
+    "threshold": 2,
+    "window_s": 300,
+    "why": "Repeated chat messages rejected by the injection screen: someone is testing the guardrails.",
+    "response": "Review the blocked reasons. Repeated probing from a key-holder means a trusted client is misbehaving."
+  },
+  {
+    "id": "D5",
+    "name": "Secret leak blocked (canary)",
+    "enabled": true,
+    "severity": "critical",
+    "match": {
+      "kind": "output_blocked"
+    },
+    "group_by": "ip",
+    "threshold": 1,
+    "window_s": 60,
+    "why": "The model actually wrote the confidential canary code. An attack got past every input defense.",
+    "response": "Treat as an incident: find the request by its id, study how the model was manipulated, add a defense."
+  },
+  {
+    "id": "D6",
+    "name": "Poisoned document rejected",
+    "enabled": true,
+    "severity": "high",
+    "match": {
+      "kind": "document_blocked"
+    },
+    "group_by": "ip",
+    "threshold": 1,
+    "window_s": 60,
+    "why": "Someone tried to store a document containing instructions for the AI.",
+    "response": "Find who submitted it, and scan stored documents (/debug/scan) for anything that got in earlier."
+  },
+  {
+    "id": "D7",
+    "name": "Oversized requests",
+    "enabled": true,
+    "severity": "low",
+    "match": {
+      "kind": "edge_request",
+      "status": 413
+    },
+    "group_by": "ip",
+    "threshold": 2,
+    "window_s": 300,
+    "why": "Requests larger than the edge allows: testing limits, or trying to exhaust memory.",
+    "response": "Usually low risk if the limit held. Check whether a legitimate client needs a higher limit."
+  },
+  {
+    "id": "D8",
+    "name": "Schema probing",
+    "enabled": true,
+    "severity": "medium",
+    "match": {
+      "kind": "validation_error"
+    },
+    "group_by": "ip",
+    "threshold": 3,
+    "window_s": 300,
+    "why": "Repeated malformed requests: someone is testing which fields the API accepts (for example a 'tenant' field).",
+    "response": "Look at which fields were rejected. Attempts to set fields like 'tenant' are deliberate."
+  },
+  {
+    "id": "D9",
+    "name": "Endpoint discovery",
+    "enabled": false,
+    "severity": "medium",
+    "match": {
+      "kind": "edge_request",
+      "status": 404
+    },
+    "group_by": "ip",
+    "threshold": 5,
+    "window_s": 60,
+    "why": "A key-holder requesting many paths that do not exist: hunting for admin or debug endpoints.",
+    "response": "Confirm which client owns the key. Legitimate apps do not guess URLs."
+  },
+  {
+    "id": "D10",
+    "name": "Milvus login guessing",
+    "enabled": false,
+    "severity": "critical",
+    "match": {
+      "kind": "db_auth_failure"
+    },
+    "group_by": "ip",
+    "threshold": 3,
+    "window_s": 300,
+    "why": "Requests to Milvus with a missing or wrong password. Only containers inside the private network can even reach Milvus, and the real services always log in correctly, so this means something inside is compromised.",
+    "response": "Identify the container by its address (docker network inspect), isolate it, and investigate."
+  }
+]
