@@ -62,7 +62,7 @@ float vectors and scalar fields written to disk.
 
 ```yaml
 minio:
-  image: minio/minio:RELEASE.2023-03-20T20-16-18Z
+  image: milvusdb/minio:RELEASE.2024-12-18T13-15-44Z   # Milvus's own copy; MinIO no longer publishes images on Docker Hub
   environment:
     MINIO_ACCESS_KEY: minioadmin
     MINIO_SECRET_KEY: minioadmin

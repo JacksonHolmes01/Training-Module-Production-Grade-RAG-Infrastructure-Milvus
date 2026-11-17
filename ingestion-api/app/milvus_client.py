@@ -233,4 +233,4 @@ async def insert_doc(doc: Dict[str, Any]) -> Dict[str, Any]:
     mr = collection.insert(data)
     collection.flush()   # ensure segment is persisted + visible to search
 
-    return {"result": "inserted", "id": str(point_id), "milvus_pk": mr.primary_keys}
+    return {"result": "inserted", "id": str(point_id), "milvus_pk": [int(k) for k in mr.primary_keys]}

@@ -44,7 +44,7 @@ Before reading about the specific services in this repo, it helps to have these 
 
 ### Images
 
-An image is a packaged, read-only artifact: code, dependencies, and runtime environment bundled together. In this repo you use a mix of prebuilt images pulled from registries (such as `nginx:1.27-alpine`, `milvusdb/milvus:v2.4.9`, `quay.io/coreos/etcd:v3.5.5`, and `minio/minio`) and locally built images (such as `ingestion-api` and `gradio-ui`, which are built from Dockerfiles in the repo).
+An image is a packaged, read-only artifact: code, dependencies, and runtime environment bundled together. In this repo you use a mix of prebuilt images pulled from registries (such as `nginx:1.27-alpine`, `milvusdb/milvus:v2.4.9`, `quay.io/coreos/etcd:v3.5.5`, and `milvusdb/minio`) and locally built images (such as `ingestion-api` and `gradio-ui`, which are built from Dockerfiles in the repo).
 
 ### Containers
 

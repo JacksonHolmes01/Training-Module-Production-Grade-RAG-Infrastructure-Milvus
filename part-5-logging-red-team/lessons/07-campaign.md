@@ -74,6 +74,10 @@ Compare with your prediction from Lesson 6.
 
 `bin/coverage.py` re-reads the logs from the start of the run (and ignores anything earlier, like your practice traffic from Lessons 3 to 5), applies the **currently enabled** rules, and checks each step's time window. A step counts as detected only if a rule **meant for that attack** fired while it was running. An unrelated alert that happened to fire at the same moment does not count. That is luck, not coverage.
 
+### If your number is one lower
+
+R06 is only detected when the model actually **leaks** the secret and the output filter blocks it. Small models are not consistent: on some runs `llama3.2:1b` refuses instead, nothing is blocked, and R06 shows `no`. Your coverage is then 7 of 12 (and 9 of 12 after Lesson 8). That is not a detection failure. The attack failed before there was anything to catch. Run the campaign again and R06 usually comes back.
+
 ---
 
 ## Look at the alerts the blue team received
